@@ -116,7 +116,7 @@ def mostrar_progreso(victorias: int, derrotas: int, empates: int, total: int):
               f"| Quedan: {restantes}")
 
 
-def evaluar(num_rondas: int = 50):
+def evaluar(num_rondas: int = 30):
     """
     Ejecuta la evaluacion del modelo.
 
@@ -210,7 +210,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Evalua el winrate de tu modelo de IA")
-    parser.add_argument("-n", "--rondas", type=int, default=50,
+    parser.add_argument("-n", "--rondas", type=int, default=30,
                         help="Numero de rondas a jugar (default: 50)")
     args = parser.parse_args()
 
