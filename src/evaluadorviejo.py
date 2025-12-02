@@ -14,7 +14,7 @@ El evaluador:
 3. Calcula y muestra el winrate final
 4. Muestra la nota segun los criterios de evaluacion
 """
-
+import csv
 import sys
 from pathlib import Path
 
@@ -30,6 +30,91 @@ ENTRADA_A_JUGADA = {
     "p": "piedra", "a": "papel", "t": "tijera",
     "piedra": "piedra", "papel": "papel", "tijera": "tijera"
 }
+
+
+def solicitar_autenticacion_carlos() -> bool:
+    """
+    Solicita la autenticacion de Carlos con la contraseña secreta.
+
+    Returns:
+        True si la autenticacion es exitosa, False en caso contrario.
+    """
+    print("\n" + "=" * 60)
+    print("   AUTENTICACION DE USUARIO ESPECIAL")
+    print("=" * 60)
+
+    # Primera pregunta
+    respuesta_carlos = input("¿Eres Carlos? (s/n): ").lower().strip()
+
+    if respuesta_carlos in ["s", "si", "sí"]:
+        contrasena = input("Por favor, introduce la contraseña secreta: ").strip()
+
+        if contrasena == "cacacahuete":
+            print("\n✅ Autenticacion exitosa. Las rondas se guardaran en partidas.csv.")
+            return True
+        else:
+            print("\n❌ Contraseña incorrecta. Se continuara sin guardar en CSV.")
+            return False
+    else:
+        print("\nUsuario no es Carlos o no desea autenticarse. Se continuara sin guardar en CSV.")
+        return False
+
+
+def obtener_ultimo_numero_ronda(nombre_archivo: str = "partidas.csv") -> int:
+    """
+    Lee el archivo CSV para determinar el ultimo numero de ronda guardado.
+
+    Returns:
+        El numero de ronda mas alto (int), o 0 si el archivo no existe o esta vacio.
+    """
+    file_path = Path(nombre_archivo)
+    if not file_path.exists():
+        return 0
+
+    ultimo_ronda = 0
+    try:
+        with open(file_path, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            # Saltar el encabezado si existe
+            header = next(reader, None)
+            if header and header[0] != "Ronda":  # Si el primer elemento no es 'Ronda', rebobinar
+                f.seek(0)
+                next(reader, None)
+
+            for row in reader:
+                try:
+                    # El numero de ronda esta en la primera columna (indice 0)
+                    ronda_num = int(row[0])
+                    ultimo_ronda = max(ultimo_ronda, ronda_num)
+                except (ValueError, IndexError):
+                    # Ignorar filas mal formadas
+                    continue
+    except Exception as e:
+        print(f"[!] ADVERTENCIA: Error al leer {nombre_archivo} para obtener el ultimo numero de ronda: {e}")
+        return 0
+
+    return ultimo_ronda
+
+
+def guardar_ronda_csv(ronda_total: int, jugada_ia: str, jugada_humano: str, resultado: str,
+                      nombre_archivo: str = "partidas.csv"):
+    """
+    Guarda los detalles de la ronda en un archivo CSV.
+    Crea el encabezado solo si el archivo no existe.
+
+    Args:
+        ronda_total: El numero de ronda total (incluyendo el desplazamiento).
+    """
+    file_exists = Path(nombre_archivo).exists()
+
+    with open(nombre_archivo, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+
+        # Escribir el encabezado solo si el archivo es nuevo
+        if not file_exists or f.tell() == 0:
+            writer.writerow(["Ronda", "Jugada_IA", "Jugada_Humano", "Resultado_IA"])
+
+        writer.writerow([ronda_total, jugada_ia, jugada_humano, resultado])
 
 
 def obtener_nota(winrate: float) -> tuple:
@@ -116,16 +201,17 @@ def mostrar_progreso(victorias: int, derrotas: int, empates: int, total: int):
               f"| Quedan: {restantes}")
 
 
-def evaluar(num_rondas: int = 50):
+def evaluar(num_rondas: int = 50, guardar_csv: bool = False):
     """
     Ejecuta la evaluacion del modelo.
 
     Args:
         num_rondas: Numero de rondas a jugar
+        guardar_csv: Si es True, guarda cada ronda en partidas.csv
     """
-    print("="*60)
+    print("=" * 60)
     print("   RPSAI - EVALUACION DE WINRATE")
-    print("="*60)
+    print("=" * 60)
     print(f"\nSe jugaran {num_rondas} rondas contra tu modelo de IA.")
     print("Juega de forma natural, como lo harias normalmente.\n")
 
@@ -141,6 +227,14 @@ def evaluar(num_rondas: int = 50):
         print("[!] La IA jugara de forma ALEATORIA.\n")
         ia = JugadorIA()
 
+    # --- Lógica para reanudar la numeración de rondas ---
+    ronda_offset = 0
+    if guardar_csv:
+        ronda_offset = obtener_ultimo_numero_ronda()
+        if ronda_offset > 0:
+            print(f"\n[INFO] Reanudando rondas guardadas desde la ronda N° {ronda_offset + 1}.")
+
+
     input("Presiona ENTER para comenzar la evaluacion...")
 
     victorias = 0
@@ -148,6 +242,9 @@ def evaluar(num_rondas: int = 50):
     empates = 0
 
     for ronda in range(1, num_rondas + 1):
+        # El número total de ronda para el CSV es la ronda actual + el desplazamiento
+        ronda_total = ronda + ronda_offset
+
         # La IA decide su jugada
         jugada_ia = ia.decidir_jugada()
 
@@ -157,11 +254,15 @@ def evaluar(num_rondas: int = 50):
         # Determinar resultado (desde perspectiva IA)
         resultado = obtener_resultado(jugada_ia, jugada_humano)
 
-        # Mostrar resultado
-        mostrar_ronda(ronda, jugada_ia, jugada_humano, resultado)
+        # Mostrar resultado usando el número de ronda total
+        mostrar_ronda(ronda_total, jugada_ia, jugada_humano, resultado)
 
         # Registrar en el historial de la IA
         ia.registrar_ronda(jugada_humano, jugada_ia)
+
+        # Guardar en CSV si esta activado, usando el número de ronda total
+        if guardar_csv:
+            guardar_ronda_csv(ronda_total, jugada_ia, jugada_humano, resultado)
 
         # Actualizar contadores
         if resultado == "victoria":
@@ -214,7 +315,11 @@ def main():
                         help="Numero de rondas a jugar (default: 50)")
     args = parser.parse_args()
 
-    evaluar(args.rondas)
+    # --- Lógica de Autenticación de Carlos ---
+    guardar_rondas = solicitar_autenticacion_carlos()
+
+    # Iniciar la evaluación, pasando el resultado de la autenticación
+    evaluar(args.rondas, guardar_csv=guardar_rondas)
 
 
 if __name__ == "__main__":
