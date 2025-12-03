@@ -17,11 +17,18 @@ El evaluador:
 
 import sys
 from pathlib import Path
+import random # Necesario para fallback aleatorio
 
 # Agregar el directorio src al path para importar modelo
 sys.path.insert(0, str(Path(__file__).parent))
 
-from modelo import JugadorIA, JUGADA_A_NUM, NUM_A_JUGADA, GANA_A
+# Importa las clases y constantes del módulo modelo.py
+# El modelo corregido debe estar en el mismo directorio (src)
+try:
+    from modelo import JugadorIA, JUGADA_A_NUM, NUM_A_JUGADA, GANA_A
+except ImportError:
+    print("ERROR: No se pudo importar 'modelo.py'. Asegúrate de que el archivo existe en src/.")
+    sys.exit(1)
 
 
 # Mapeo de entrada a jugada
@@ -33,12 +40,7 @@ ENTRADA_A_JUGADA = {
 
 
 def obtener_nota(winrate: float) -> tuple:
-    """
-    Calcula la nota basada en el winrate.
-
-    Returns:
-        (nota, mensaje_especial)
-    """
+    """Calcula la nota basada en el winrate."""
     if winrate >= 55:
         return 10, "BONUS: Fallos en examen no restan!"
     elif winrate >= 50:
@@ -69,8 +71,10 @@ def obtener_resultado(jugada_ia: str, jugada_humano: str) -> str:
     """Obtiene el resultado desde la perspectiva de la IA."""
     if jugada_ia == jugada_humano:
         return "empate"
+    # Si la jugada de la IA gana a la jugada del humano
     elif GANA_A[jugada_ia] == jugada_humano:
         return "victoria"
+    # En cualquier otro caso, el humano gana a la IA
     else:
         return "derrota"
 
@@ -88,19 +92,19 @@ def leer_jugada_humano() -> str:
 
 
 def mostrar_ronda(ronda: int, jugada_ia: str, jugada_humano: str, resultado: str):
-    """Muestra el resultado de una ronda."""
-    simbolos = {"piedra": "P", "papel": "A", "tijera": "T"}
+    """Muestra el resultado de una ronda con emojis."""
+    simbolos = {"piedra": "🪨", "papel": "📃", "tijera": "✂️"}
 
     print(f"\n--- Ronda {ronda} ---")
-    print(f"Tu: {simbolos[jugada_humano]} ({jugada_humano})")
-    print(f"IA: {simbolos[jugada_ia]} ({jugada_ia})")
+    print(f"🧑 Tu: {simbolos.get(jugada_humano, '❓')} ({jugada_humano})")
+    print(f"🤖 IA: {simbolos.get(jugada_ia, '❓')} ({jugada_ia})")
 
     if resultado == "victoria":
-        print(">>> IA GANA <<<")
+        print(">>> 🏆 IA GANA <<<")
     elif resultado == "derrota":
-        print(">>> Tu ganas <<<")
+        print(">>> 🎉 Tu ganas <<<")
     else:
-        print(">>> Empate <<<")
+        print(">>> 🤝 Empate <<<")
 
 
 def mostrar_progreso(victorias: int, derrotas: int, empates: int, total: int):
@@ -108,20 +112,22 @@ def mostrar_progreso(victorias: int, derrotas: int, empates: int, total: int):
     jugadas = victorias + derrotas + empates
     restantes = total - jugadas
 
-    if victorias + derrotas > 0:
-        winrate_actual = victorias / (victorias + derrotas) * 100
+    # Solo calculamos winrate si hay jugadas decisivas (no empates)
+    total_decisivas = victorias + derrotas
+    if total_decisivas > 0:
+        winrate_actual = victorias / total_decisivas * 100
         print(f"\n[Progreso: {jugadas}/{total}] "
               f"IA: {victorias}V-{derrotas}D-{empates}E "
               f"(Winrate: {winrate_actual:.1f}%) "
               f"| Quedan: {restantes}")
+    else:
+        # Muestra 0% al inicio
+        print(f"\n[Progreso: {jugadas}/{total}] IA: 0V-0D-0E (Winrate: 0.0%) | Quedan: {restantes}")
 
 
 def evaluar(num_rondas: int = 50):
     """
     Ejecuta la evaluacion del modelo.
-
-    Args:
-        num_rondas: Numero de rondas a jugar
     """
     print("="*60)
     print("   RPSAI - EVALUACION DE WINRATE")
@@ -129,17 +135,23 @@ def evaluar(num_rondas: int = 50):
     print(f"\nSe jugaran {num_rondas} rondas contra tu modelo de IA.")
     print("Juega de forma natural, como lo harias normalmente.\n")
 
-    # Intentar cargar el modelo
+    ia = None
     try:
         ia = JugadorIA()
         if ia.modelo is None:
-            print("[!] ADVERTENCIA: No se cargo ningun modelo.")
+            print("[!] ADVERTENCIA: No se cargo ningun modelo (modelo.pkl no encontrado).")
             print("[!] La IA jugara de forma ALEATORIA.")
             print("[!] Entrena tu modelo primero con: python src/modelo.py\n")
+            raise RuntimeError("Modelo no cargado.")
     except Exception as e:
-        print(f"[!] Error al cargar el modelo: {e}")
-        print("[!] La IA jugara de forma ALEATORIA.\n")
-        ia = JugadorIA()
+        # En caso de error crítico (ej. FileNotFoundError en el init), usar un fallback
+        print(f"[!] Error al inicializar JugadorIA o al cargar el modelo: {e}")
+        print("[!] Usando Fallback IA aleatoria.\n")
+        class FallbackIA:
+            def decidir_jugada(self): return random.choice(["piedra", "papel", "tijera"])
+            def registrar_ronda(self, j1, j2): pass
+        ia = FallbackIA()
+
 
     input("Presiona ENTER para comenzar la evaluacion...")
 
@@ -148,7 +160,7 @@ def evaluar(num_rondas: int = 50):
     empates = 0
 
     for ronda in range(1, num_rondas + 1):
-        # La IA decide su jugada
+        # La IA decide su jugada (usando el modelo o aleatorio si no carga)
         jugada_ia = ia.decidir_jugada()
 
         # El humano juega
@@ -161,7 +173,8 @@ def evaluar(num_rondas: int = 50):
         mostrar_ronda(ronda, jugada_ia, jugada_humano, resultado)
 
         # Registrar en el historial de la IA
-        ia.registrar_ronda(jugada_humano, jugada_ia)
+        # IMPORTANTE: El humano es J1, la IA es J2, esto alimenta el historial para la próxima ronda.
+        ia.registrar_ronda(jugada_ia, jugada_humano)
 
         # Actualizar contadores
         if resultado == "victoria":
@@ -185,11 +198,11 @@ def evaluar(num_rondas: int = 50):
     else:
         winrate = 0
 
-    print(f"\nRondas jugadas: {num_rondas}")
-    print(f"Victorias IA: {victorias}")
-    print(f"Derrotas IA: {derrotas}")
-    print(f"Empates: {empates}")
-    print(f"\nWINRATE DE LA IA: {winrate:.1f}%")
+    print(f"\n🎯 Rondas jugadas: {num_rondas}")
+    print(f"🤖 Victorias IA: {victorias}")
+    print(f"🧑 Derrotas IA: {derrotas}")
+    print(f"🤝 Empates: {empates}")
+    print(f"\n📊 WINRATE DE LA IA: {winrate:.1f}%")
 
     nota, bonus = obtener_nota(winrate)
     print(f"\n{'='*60}")
